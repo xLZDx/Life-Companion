@@ -9,7 +9,7 @@ Phase 2: wires google-generativeai with `gemini-3.1-pro-preview` primary +
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 
 from src.config import get_settings
 from src.llm.adapter import LLMAdapter, LLMMessage, LLMResponse
@@ -44,9 +44,8 @@ class GeminiAdapter(LLMAdapter):
         max_tokens: int = 1024,
         temperature: float = 0.7,
         request_id: str | None = None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncIterator[str]:
         raise NotImplementedError("Phase 2 implements Gemini stream()")
-        yield ""  # pragma: no cover - unreachable; signals async generator
 
     async def classify(
         self,

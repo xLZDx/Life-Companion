@@ -12,6 +12,7 @@ TTL: settings.redis_token_ttl_seconds (default 900s, shorter than Firebase's
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -87,12 +88,17 @@ async def verify_token(token: str, redis: Redis | None = None) -> FirebaseUser:
             if cached is not None:
                 payload = json.loads(cached)
                 return FirebaseUser(**payload)
-        except Exception as exc:  # pragma: no cover - Redis outage path
-            log.warning("auth.cache_miss_due_to_redis_error", exc_info=exc)
+        except Exception:  # pragma: no cover - Redis outage path
+            # Do NOT log exception details - Redis URL may include credentials.
+            log.warning("auth.cache_read_failed")
 
-    # ---- Cache miss: call Firebase ----
+    # ---- Cache miss: call Firebase (sync call wrapped to free the event loop) ----
     _initialize_firebase()
-    decoded = firebase_auth.verify_id_token(token, check_revoked=True)
+    loop = asyncio.get_running_loop()
+    decoded = await loop.run_in_executor(
+        None,
+        lambda: firebase_auth.verify_id_token(token, check_revoked=True),
+    )
     user = FirebaseUser(
         uid=decoded["uid"],
         email=decoded.get("email"),
@@ -109,7 +115,7 @@ async def verify_token(token: str, redis: Redis | None = None) -> FirebaseUser:
                 json.dumps(asdict(user)),
                 ex=settings.redis_token_ttl_seconds,
             )
-        except Exception as exc:  # pragma: no cover
-            log.warning("auth.cache_write_failed", exc_info=exc)
+        except Exception:  # pragma: no cover
+            log.warning("auth.cache_write_failed")
 
     return user

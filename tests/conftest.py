@@ -29,6 +29,15 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 # Re-import after env is set
 from src.auth.firebase import FirebaseUser  # noqa: E402
+from src.config import get_settings  # noqa: E402
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _clear_settings_cache() -> Iterator[None]:
+    """Ensure Settings is re-read after conftest env-var setup."""
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture

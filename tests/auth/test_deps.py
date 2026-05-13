@@ -32,3 +32,26 @@ def test_protected_route_succeeds_with_valid_token(
 def test_public_crisis_hotlines_does_not_require_token(client: TestClient) -> None:
     response = client.get("/api/crisis/hotlines?country=RU")
     assert response.status_code == 200
+
+
+def test_protected_route_returns_503_when_auth_service_fails(
+    client: TestClient,
+) -> None:
+    """If verify_token raises a non-token-shape error, deps must return 503."""
+    import src.auth.firebase as fb_mod
+    from src.auth.firebase import FirebaseUser
+
+    async def boom(token: str, redis: object = None) -> FirebaseUser:
+        raise RuntimeError("Firebase network unreachable")
+
+    original = fb_mod.verify_token
+    fb_mod.verify_token = boom  # type: ignore[assignment]
+    try:
+        response = client.post(
+            "/api/reflect",
+            headers={"Authorization": "Bearer test-token-valid"},
+        )
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Authentication service unavailable"
+    finally:
+        fb_mod.verify_token = original  # type: ignore[assignment]

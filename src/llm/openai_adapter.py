@@ -6,7 +6,7 @@ Phase 1 stub. Phase 2+ wires openai SDK with gpt-4o-mini.
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 
 from src.config import get_settings
 from src.llm.adapter import LLMAdapter, LLMMessage, LLMResponse
@@ -40,9 +40,8 @@ class OpenAIAdapter(LLMAdapter):
         max_tokens: int = 1024,
         temperature: float = 0.7,
         request_id: str | None = None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncIterator[str]:
         raise NotImplementedError("Phase 2 implements OpenAI stream()")
-        yield ""  # pragma: no cover
 
     async def classify(
         self,

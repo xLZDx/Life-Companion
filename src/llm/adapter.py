@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import hashlib
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -68,7 +68,7 @@ class LLMCallLog:
     latency_ms: int
     success: bool
     error_type: str | None = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @staticmethod
     def hash_user_id(user_id: str) -> str:
@@ -115,7 +115,7 @@ class LLMAdapter(ABC):
         max_tokens: int = 1024,
         temperature: float = 0.7,
         request_id: str | None = None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncIterator[str]:
         """Streaming completion - yields token chunks."""
         ...
 

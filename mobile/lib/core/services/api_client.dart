@@ -71,6 +71,14 @@ class _RetryInterceptor extends Interceptor {
   }
 
   bool _shouldRetry(DioException err) {
+    // Only retry idempotent methods. POST may be marked retry-safe via
+    // `options.extra['retry_safe'] = true` at the call site.
+    final method = err.requestOptions.method.toUpperCase();
+    final retrySafe =
+        (err.requestOptions.extra['retry_safe'] as bool?) ?? false;
+    final idempotent =
+        method == 'GET' || method == 'HEAD' || method == 'OPTIONS' || retrySafe;
+    if (!idempotent) return false;
     if (err.type == DioExceptionType.connectionError) return true;
     if (err.type == DioExceptionType.receiveTimeout) return true;
     if (err.type == DioExceptionType.connectionTimeout) return true;

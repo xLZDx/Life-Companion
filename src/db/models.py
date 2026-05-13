@@ -19,17 +19,19 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
-    Float,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.engine import Dialect
@@ -55,10 +57,16 @@ class EncryptedString(TypeDecorator[str]):
     """
 
     impl = SAString
-    cache_ok = True
+    # Per-user keys land in Phase 4 - statement cache must NOT key on this type
+    # or one user's decrypted value could be served on another user's query.
+    # See core/PHASE_1_REVIEW_BACKLOG.md (database-reviewer H-1/H-2).
+    cache_ok = False
 
     def process_bind_param(self, value: str | None, dialect: Dialect) -> str | None:  # noqa: D401
-        # Phase 1 passthrough. Phase 4 will call pgcrypto via raw SQL function.
+        # Phase 1 passthrough. Phase 4 cannot use process_bind_param for
+        # per-user-key encryption (TypeDecorator has no row context).
+        # Plan: encrypt at the SQL-expression layer via func.pgp_sym_encrypt
+        # (Option A) or in the service layer before bind (Option B).
         return value
 
     def process_result_value(self, value: str | None, dialect: Dialect) -> str | None:
@@ -99,6 +107,19 @@ class User(Base):
     subscriptions: Mapped[list[Subscription]] = relationship(back_populates="user")
     crisis_events: Mapped[list[CrisisEvent]] = relationship(back_populates="user")
 
+    __table_args__ = (
+        # Partial unique index: only one user per non-null email.
+        Index(
+            "ix_users_email_unique",
+            "email",
+            unique=True,
+            postgresql_where=text("email IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "tier IN ('free','plus','premium')", name="ck_users_tier"
+        ),
+    )
+
 
 class JournalEntry(Base):
     __tablename__ = "journal_entries"
@@ -106,10 +127,11 @@ class JournalEntry(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # ondelete CASCADE - GDPR §5.5 requires complete wipe within 30 days.
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE")
     )
-    content: Mapped[str] = mapped_column(EncryptedString, nullable=False)  # ENCRYPTED
+    content: Mapped[str] = mapped_column(EncryptedString)  # ENCRYPTED
     pillar: Mapped[str] = mapped_column(String(16))  # life/mind/health
     area: Mapped[str | None] = mapped_column(String(32))  # profession, family, ...
     entry_date: Mapped[datetime] = mapped_column(
@@ -121,8 +143,16 @@ class JournalEntry(Base):
     user: Mapped[User] = relationship(back_populates="journal_entries")
 
     __table_args__ = (
-        Index("ix_journal_user_date", "user_id", "entry_date"),
+        Index(
+            "ix_journal_user_date_active",
+            "user_id",
+            "entry_date",
+            postgresql_where=text("is_deleted = false"),
+        ),
         Index("ix_journal_user_pillar", "user_id", "pillar"),
+        CheckConstraint(
+            "pillar IN ('life','mind','health')", name="ck_journal_pillar"
+        ),
     )
 
 
@@ -133,18 +163,20 @@ class Reflection(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE")
     )
     journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("journal_entries.id")
+        ForeignKey("journal_entries.id", ondelete="SET NULL")
     )
-    user_message: Mapped[str] = mapped_column(EncryptedString, nullable=False)  # ENCRYPTED
+    user_message: Mapped[str] = mapped_column(EncryptedString)  # ENCRYPTED
     ai_response: Mapped[str | None] = mapped_column(EncryptedString)  # ENCRYPTED
     provider: Mapped[str | None] = mapped_column(String(32))  # gemini/claude/openai
     model_version: Mapped[str | None] = mapped_column(String(64))
     tokens_in: Mapped[int] = mapped_column(Integer, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)
-    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(precision=10, scale=6), default=Decimal("0")
+    )
     crisis_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -152,7 +184,11 @@ class Reflection(Base):
 
     user: Mapped[User] = relationship(back_populates="reflections")
 
-    __table_args__ = (Index("ix_reflection_user_date", "user_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_reflection_user_date", "user_id", "created_at"),
+        # Database-reviewer C-1: uncovered FK -> add index.
+        Index("ix_reflection_journal_entry", "journal_entry_id"),
+    )
 
 
 class PatternsCache(Base):
@@ -164,11 +200,13 @@ class PatternsCache(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False, unique=True
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True
     )
-    insights_json: Mapped[str] = mapped_column(EncryptedString, nullable=False)  # ENCRYPTED
+    insights_json: Mapped[str] = mapped_column(EncryptedString)  # ENCRYPTED
     computed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
     window_days: Mapped[int] = mapped_column(Integer, default=30)
 
@@ -180,11 +218,11 @@ class HealthDoc(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE")
     )
     doc_type: Mapped[str] = mapped_column(String(32))
     # lab_result | prescription | discharge_summary | imaging_report | other
-    original_text: Mapped[str] = mapped_column(EncryptedString, nullable=False)  # ENCRYPTED
+    original_text: Mapped[str] = mapped_column(EncryptedString)  # ENCRYPTED
     translated_text: Mapped[str | None] = mapped_column(EncryptedString)  # ENCRYPTED
     questions_for_doctor: Mapped[str | None] = mapped_column(EncryptedString)  # ENCRYPTED
     uploaded_at: Mapped[datetime] = mapped_column(
@@ -194,7 +232,14 @@ class HealthDoc(Base):
 
     user: Mapped[User] = relationship()
 
-    __table_args__ = (Index("ix_healthdoc_user_date", "user_id", "uploaded_at"),)
+    __table_args__ = (
+        Index(
+            "ix_healthdoc_user_date_active",
+            "user_id",
+            "uploaded_at",
+            postgresql_where=text("is_deleted = false"),
+        ),
+    )
 
 
 class Subscription(Base):
@@ -204,13 +249,16 @@ class Subscription(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE")
     )
-    tier: Mapped[str] = mapped_column(String(32), nullable=False)
+    tier: Mapped[str] = mapped_column(String(32))
     # plus | premium | pack_<slug>
-    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider: Mapped[str] = mapped_column(String(16))
     # stripe | yookassa | apple | google
-    provider_subscription_id: Mapped[str | None] = mapped_column(String(256))
+    # Unique to deduplicate at-least-once webhook deliveries.
+    provider_subscription_id: Mapped[str | None] = mapped_column(
+        String(256), unique=True
+    )
     status: Mapped[str] = mapped_column(String(16), default="active")
     # active | cancelled | expired | trial
     started_at: Mapped[datetime] = mapped_column(
@@ -221,7 +269,13 @@ class Subscription(Base):
 
     user: Mapped[User] = relationship(back_populates="subscriptions")
 
-    __table_args__ = (Index("ix_subscription_user_status", "user_id", "status"),)
+    __table_args__ = (
+        Index("ix_subscription_user_status", "user_id", "status"),
+        CheckConstraint(
+            "status IN ('active','cancelled','expired','trial')",
+            name="ck_sub_status",
+        ),
+    )
 
 
 class CrisisEvent(Base):
@@ -231,6 +285,9 @@ class CrisisEvent(Base):
     Stores SHA-256(message) only, not plaintext, so no PII leaks even with
     Phase 1 passthrough encryption. Access requires 2-person approval per
     GUARDRAILS.md §5.2.
+
+    On user delete, `user_id` is set NULL (anonymized retention) rather than
+    cascade-delete - GUARDRAILS §5.5 keeps anonymized crisis records 7 years.
     """
 
     __tablename__ = "crisis_events"
@@ -238,20 +295,22 @@ class CrisisEvent(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    anonymized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trigger_source: Mapped[str] = mapped_column(String(16))  # regex | llm | both
     trigger_category: Mapped[str] = mapped_column(String(32))
     # suicidal_ideation | self_harm | harm_to_others | medical_emergency | abuse
     message_hash: Mapped[str] = mapped_column(String(64))  # SHA-256
-    hotlines_shown: Mapped[str] = mapped_column(String(64))  # comma-sep country codes
+    # Wider column to fit fallback union of many country codes.
+    hotlines_shown: Mapped[str] = mapped_column(String(256))
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
-    user: Mapped[User] = relationship(back_populates="crisis_events")
+    user: Mapped[User | None] = relationship(back_populates="crisis_events")
 
     __table_args__ = (Index("ix_crisis_user_date", "user_id", "created_at"),)
 
@@ -267,7 +326,3 @@ __all__: list[str] = [
     "Subscription",
     "CrisisEvent",
 ]
-
-
-# Re-export for type checkers that don't like forward references in __all__
-_ = Any  # keep `Any` import live for future type expansion

@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/router/routes.dart';
 import '../../core/theme/app_colors.dart';
 
 /// Crisis modal. Phase 2 wires the real hotline list + dial intent;
 /// Phase 1 ships the structural scaffold so the GoRouter route exists.
 ///
 /// GUARDRAILS:
-/// - barrierDismissible: false (cannot tap-outside to close)
+/// - PopScope(canPop: false) - hardware back / iOS swipe-back disabled
 /// - Requires explicit "I'm safe, continue" tap before resuming
+/// - Uses GoRouter context.pop / context.go to guarantee navigation works
 /// - No paywall, no auth requirement
 class CrisisModalPage extends StatelessWidget {
   const CrisisModalPage({super.key});
@@ -19,7 +22,7 @@ class CrisisModalPage extends StatelessWidget {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: crisisColor.withOpacity(0.05),
+        backgroundColor: crisisColor.withValues(alpha: 0.05),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -44,7 +47,13 @@ class CrisisModalPage extends StatelessWidget {
                 ),
                 const Spacer(),
                 FilledButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go(Routes.home);
+                    }
+                  },
                   child: const Text("I'm safe, continue"),
                 ),
               ],

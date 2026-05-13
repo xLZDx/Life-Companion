@@ -8,9 +8,9 @@ Test harness overrides via env-var patching or `Settings.model_validate({...})`.
 """
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -97,6 +97,32 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"Refusing C:-drive path '{v}'. Use D:/ per global disk policy."
             )
+        return v
+
+    @field_validator("encryption_key_stub")
+    @classmethod
+    def reject_stub_key_in_production(cls, v: str, info: ValidationInfo) -> str:
+        """Refuse to start in production with the stub encryption key."""
+        data: dict[str, Any] = info.data or {}
+        if data.get("app_env") == "production" and v == "stub-key-replace-in-phase4":
+            raise ValueError(
+                "ENCRYPTION_KEY_STUB must be replaced with a real KMS/Vault "
+                "reference before production deployment."
+            )
+        return v
+
+    @field_validator("cors_origins")
+    @classmethod
+    def reject_localhost_cors_in_production(
+        cls, v: list[str], info: ValidationInfo
+    ) -> list[str]:
+        data: dict[str, Any] = info.data or {}
+        if data.get("app_env") == "production":
+            for origin in v:
+                if "localhost" in origin or "127.0.0.1" in origin:
+                    raise ValueError(
+                        f"Localhost CORS origin '{origin}' not permitted in production."
+                    )
         return v
 
     @property

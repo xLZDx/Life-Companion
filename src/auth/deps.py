@@ -13,8 +13,15 @@ async def get_current_user(request: Request) -> FirebaseUser:
     """
     Return the verified Firebase user attached by the auth middleware.
 
-    Raises 401 if no user was attached (middleware found no valid token).
+    - 503 if Firebase / network failed (auth_error set by middleware).
+    - 401 if no user was attached (bad / missing token).
+    - Otherwise: returns the user.
     """
+    if getattr(request.state, "auth_error", None) == "service_unavailable":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service unavailable",
+        )
     user: FirebaseUser | None = getattr(request.state, "user", None)
     if user is None:
         raise HTTPException(
@@ -25,7 +32,13 @@ async def get_current_user(request: Request) -> FirebaseUser:
 
 
 async def get_optional_user(request: Request) -> FirebaseUser | None:
-    """Return the verified user if present, else None (for public + auth-aware routes)."""
+    """
+    Return the verified user if present, else None.
+
+    For auth-aware-but-not-required routes. On auth-service outage we still
+    return None (graceful) but the caller can inspect request.state.auth_error
+    if it wants to react.
+    """
     return getattr(request.state, "user", None)
 
 

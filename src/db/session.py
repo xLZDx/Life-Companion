@@ -8,7 +8,7 @@ which yields an `AsyncSession` and closes it on request teardown.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import (
@@ -44,7 +44,7 @@ def _session_factory() -> async_sessionmaker[AsyncSession]:
     )
 
 
-async def get_session() -> AsyncIterator[AsyncSession]:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency yielding an `AsyncSession` per request."""
     factory = _session_factory()
     async with factory() as session:

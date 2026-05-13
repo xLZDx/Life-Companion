@@ -20,6 +20,11 @@ from typing import Any
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from firebase_admin.auth import (
+    ExpiredIdTokenError,
+    InvalidIdTokenError,
+    RevokedIdTokenError,
+)
 from redis.asyncio import Redis
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -31,22 +36,28 @@ from src.api import health_pillar as health_pillar_api
 from src.api import patterns as patterns_api
 from src.api import reflection as reflection_api
 from src.auth.firebase import FirebaseUser, verify_token
-from src.config import get_settings
+from src.config import Settings, get_settings
 
-PUBLIC_PATHS: frozenset[str] = frozenset(
+# Routes always reachable without auth.
+_ALWAYS_PUBLIC: frozenset[str] = frozenset(
     {
         "/api/health",
         "/api/version",
         "/api/crisis/hotlines",
-        "/docs",
-        "/redoc",
-        "/openapi.json",
     }
 )
+# OpenAPI surface - public in dev, hidden in production (security-reviewer H-3).
+_DEV_ONLY_PUBLIC: frozenset[str] = frozenset({"/docs", "/redoc", "/openapi.json"})
+
+
+def _build_public_paths(settings: Settings) -> frozenset[str]:
+    if settings.is_production:
+        return _ALWAYS_PUBLIC
+    return _ALWAYS_PUBLIC | _DEV_ONLY_PUBLIC
 
 
 def configure_logging() -> None:
-    """structlog setup: JSON in prod, console + JSON-file in dev."""
+    """structlog setup: JSON in prod, console-readable in dev + test."""
     settings = get_settings()
     level = getattr(logging, settings.log_level)
 
@@ -57,15 +68,17 @@ def configure_logging() -> None:
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
     ]
-    if settings.is_production or settings.is_test:
+    if settings.is_production:
         renderer: Any = structlog.processors.JSONRenderer()
     else:
-        renderer = structlog.dev.ConsoleRenderer(colors=True)
+        # Console in dev + test - JSON during pytest captured output is unreadable.
+        renderer = structlog.dev.ConsoleRenderer(colors=not settings.is_test)
 
     structlog.configure(
         processors=[*shared_processors, renderer],
         wrapper_class=structlog.make_filtering_bound_logger(level),
         context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
@@ -82,27 +95,40 @@ class AuthMiddleware(BaseHTTPMiddleware):
     cache), attaches the resulting `FirebaseUser` to `request.state.user`.
 
     Does NOT 401 here - that decision belongs to per-route dependencies so
-    PUBLIC_PATHS routes can choose to accept anonymous requests.
-    """
+    public routes can choose to accept anonymous requests.
 
-    def __init__(self, app: Any, redis: Redis | None) -> None:
-        super().__init__(app)
-        self.redis = redis
+    Distinguishes between bad-token errors (user stays None -> 401) and
+    Firebase service errors (sets request.state.auth_error -> 503).
+    """
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         request.state.user = None
-        if request.url.path in PUBLIC_PATHS:
+        request.state.auth_error = None
+
+        settings = get_settings()
+        if request.url.path in _build_public_paths(settings):
             return await call_next(request)
+
+        # Read live Redis client from app state (set by lifespan).
+        redis: Redis | None = getattr(request.app.state, "redis", None)
 
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[len("Bearer ") :].strip()
             try:
-                user: FirebaseUser = await verify_token(token, redis=self.redis)
+                user: FirebaseUser = await verify_token(token, redis=redis)
                 request.state.user = user
-            except Exception:
-                # Leave state.user = None; protected routes will 401 via dependency.
+            except (
+                ExpiredIdTokenError,
+                InvalidIdTokenError,
+                RevokedIdTokenError,
+                ValueError,
+            ):
+                # Known bad-token errors: leave user=None; deps will 401.
                 pass
+            except Exception:
+                # Firebase or network outage - tell deps to return 503.
+                request.state.auth_error = "service_unavailable"
 
         return await call_next(request)
 
@@ -129,28 +155,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
+    # Hide OpenAPI docs in production (security-reviewer H-3).
+    docs_url = None if settings.is_production else "/docs"
+    redoc_url = None if settings.is_production else "/redoc"
+    openapi_url = None if settings.is_production else "/openapi.json"
+
     app = FastAPI(
         title="Life Companion API",
         version=settings.app_version,
         lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
     )
 
-    # CORS - tight in production, permissive in dev
+    # CORS - Phase 1 surface is GET + POST + OPTIONS only.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
-    # Auth middleware (attaches request.state.user, doesn't 401)
-    # Redis client is attached in `lifespan` after startup; pass None for now
-    # and re-bind via a wrapper if late binding is needed. For Phase 1,
-    # AuthMiddleware reads `request.app.state.redis` lazily inside dispatch
-    # would be cleaner - keeping the constructor pattern for now and binding
-    # the live redis from a small wrapper.
-    app.add_middleware(AuthMiddleware, redis=None)
+    # Auth middleware reads request.app.state.redis lazily on each request.
+    app.add_middleware(AuthMiddleware)
 
     # Routers
     app.include_router(health_api.router)
