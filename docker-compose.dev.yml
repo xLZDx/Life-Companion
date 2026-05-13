@@ -1,0 +1,42 @@
+version: "3.9"
+
+# Local development stack: Postgres 16 + Redis 7.
+# All persistent volumes live on the D: drive per global disk policy.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lc
+      POSTGRES_PASSWORD: lc
+      POSTGRES_DB: life_companion
+    ports:
+      - "5432:5432"
+    volumes:
+      - type: bind
+        source: D:/test 2/Life Companion/data/postgres
+        target: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lc -d life_companion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: lc-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - type: bind
+        source: D:/test 2/Life Companion/data/redis
+        target: /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

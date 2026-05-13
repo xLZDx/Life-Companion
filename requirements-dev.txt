@@ -1,0 +1,20 @@
+# Development + test dependencies for Life Companion.
+-r requirements.txt
+
+# ---- Test framework ----
+pytest>=8.3,<9.0
+pytest-asyncio>=0.24,<0.25
+pytest-cov>=6.0,<7.0
+pytest-mock>=3.14,<4.0
+pytest-postgresql>=6.1,<7.0
+
+# ---- HTTP test client ----
+# httpx is already in requirements.txt — used both at runtime and in tests
+
+# ---- Mocking ----
+fakeredis>=2.26,<3.0
+
+# ---- Static analysis ----
+ruff>=0.8,<0.9
+mypy>=1.13,<2.0
+types-redis>=4.6,<5.0

@@ -1,0 +1,104 @@
+[project]
+name = "life-companion"
+version = "0.1.0"
+description = "Daily-use mobile + backend product helping everyday people with reflection, mind and health pillars."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+
+# Runtime deps tracked in requirements.txt for pip parity.
+# pyproject.toml here is for tooling config (ruff, mypy, pytest, coverage).
+
+# ---------------------------------------------------------------------------
+# Ruff (lint + formatter)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "ASYNC",  # async correctness
+    "S",   # flake8-bandit (security)
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",  # line length (handled by formatter)
+    "S101",  # use of assert (allowed in tests)
+    "B008",  # FastAPI uses function-default Depends() heavily
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S106", "S311"]  # tests can assert, use fake secrets, weak random
+
+# ---------------------------------------------------------------------------
+# Mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+exclude = ["venv/", "tests/", "src/db/migrations/"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "firebase_admin.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "google.generativeai.*"
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "-q",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: requires real Postgres or Redis",
+    "crisis: crisis detection tests (must be 100% branch coverage)",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "src/db/migrations/*",
+    "src/*/__init__.py",
+]
+
+[tool.coverage.report]
+fail_under = 80
+precision = 1
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+# Crisis module has its own stricter threshold enforced separately:
+# pytest tests/crisis/ --cov=src/crisis --cov-fail-under=100
