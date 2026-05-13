@@ -1,0 +1,7 @@
+{
+  "_comment": "Project-scoped settings for Life Companion. Inherits broad allow + destructive deny rules from D:\\test 2\\.claude\\settings.json. Only project-specific overrides belong here.",
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}

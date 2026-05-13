@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+build/
+dist/
+node_modules/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+mobile/build/
+.idea/
+.vscode/
+*.log
+*.err
