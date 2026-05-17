@@ -35,7 +35,8 @@ from src.api import health as health_api
 from src.api import health_pillar as health_pillar_api
 from src.api import patterns as patterns_api
 from src.api import reflection as reflection_api
-from src.auth.firebase import FirebaseUser, verify_token
+from src.auth.firebase import FirebaseUser
+import src.auth.firebase as fb_mod
 from src.config import Settings, get_settings
 
 # Routes always reachable without auth.
@@ -116,7 +117,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if auth_header.startswith("Bearer "):
             token = auth_header[len("Bearer ") :].strip()
             try:
-                user: FirebaseUser = await verify_token(token, redis=redis)
+                user: FirebaseUser = await fb_mod.verify_token(token, redis=redis)
                 request.state.user = user
             except (
                 ExpiredIdTokenError,

@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     secret_key: str = Field(..., min_length=32)
 
     # ---- Database ----
-    database_url: str = "postgresql+asyncpg://lc:lc@localhost:5432/life_companion"
+    database_url: str = "postgresql+psycopg://lc:lc@localhost:5432/life_companion"
     database_pool_size: int = 10
     database_max_overflow: int = 20
     duckdb_temp_dir: str = "D:/test 2/Life Companion/data/cache/duckdb_temp"

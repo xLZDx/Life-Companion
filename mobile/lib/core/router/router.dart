@@ -61,7 +61,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.crisis,
-        pageBuilder: (_, __) => const CrisisModalPage(),
+        builder: (_, __) => const CrisisModalPage(),
       ),
     ],
   );

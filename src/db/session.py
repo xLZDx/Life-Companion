@@ -1,7 +1,7 @@
 """
 Async SQLAlchemy engine + session factory + FastAPI dependency.
 
-Uses asyncpg as the driver. The engine is a process-level singleton lazily
+Uses psycopg3 as the driver. The engine is a process-level singleton lazily
 constructed via `get_engine()`. Sessions are per-request via `get_session()`,
 which yields an `AsyncSession` and closes it on request teardown.
 """

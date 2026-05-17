@@ -4,17 +4,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 final authServiceProvider = Provider<AuthService>((ref) => AuthService());
 
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseAuth? _auth;
 
-  Stream<User?> authStateChanges() => _auth.authStateChanges();
+  AuthService() : _auth = _tryGetAuth();
 
-  User? get currentUser => _auth.currentUser;
+  static FirebaseAuth? _tryGetAuth() {
+    try {
+      return FirebaseAuth.instance;
+    } catch (_) {
+      // Works with offline dev mode + unit/widget tests where Firebase isn't
+      // configured/initialized.
+      return null;
+    }
+  }
+
+  Stream<User?> authStateChanges() {
+    final auth = _auth;
+    if (auth == null) return const Stream<User?>.empty();
+    return auth.authStateChanges();
+  }
+
+  User? get currentUser => _auth?.currentUser;
 
   Future<void> signInAnonymously() async {
-    await _auth.signInAnonymously();
+    final auth = _auth;
+    if (auth == null) {
+      throw StateError('FirebaseAuth is not available (Firebase not initialized).');
+    }
+    await auth.signInAnonymously();
   }
 
   Future<void> signOut() async {
-    await _auth.signOut();
+    final auth = _auth;
+    if (auth == null) {
+      throw StateError('FirebaseAuth is not available (Firebase not initialized).');
+    }
+    await auth.signOut();
   }
 }
