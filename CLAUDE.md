@@ -1,4 +1,4 @@
-> **Inherits global rules from `D:\test 2\CLAUDE.md`** — approval gate, no-guessing, regression tests, git lifecycle (including todo-in-commits), shell pre-approval, D:-drive-only disk policy, agents-first routing, cite-source rule, validate-logs-before-success rule. Read that file too.
+> **Inherits global rules from `D:\test 2\CLAUDE.md`** — approval gate, no-guessing, regression tests, git lifecycle (including todo-in-commits), shell pre-approval, agents-first routing, cite-source rule, validate-logs-before-success rule. Read that file too.
 
 # Life Companion — Project Context
 
@@ -96,6 +96,10 @@ A daily-use mobile + backend product that helps everyday people work on three pi
 - Outstanding-work plan: `core/PLAN_2026_05_11_MVP.md` (consolidated 7-phase MVP, ~7-8 weeks).
 - Guardrails spec: `core/GUARDRAILS.md` (crisis detection, no-diagnosis rules, disclaimer copy, privacy controls).
 - Privacy + legal copy: `core/PRIVACY_LEGAL.md` (GDPR / 152-ФЗ / disclaimer templates) — to be written before launch.
+
+## Non-Claude agents
+
+`AGENTS.md` — tool-agnostic build/test/git-safety conventions for Codex/Aider/etc. sharing this checkout.
 
 ## Defaults (per operator approval 2026-05-13)
 
