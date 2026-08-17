@@ -1,4 +1,4 @@
-> **Inherits global rules from `D:\test 2\CLAUDE.md`** — approval gate, no-guessing, regression tests, git lifecycle (including todo-in-commits), shell pre-approval, agents-first routing, cite-source rule, validate-logs-before-success rule. Read that file too.
+> **Inherits global rules from `D:\Repo\CLAUDE.md`** — approval gate, no-guessing, regression tests, git lifecycle (including todo-in-commits), shell pre-approval, agents-first routing, cite-source rule, validate-logs-before-success rule. Read that file too.
 
 # Life Companion — Project Context
 
@@ -41,7 +41,7 @@ A daily-use mobile + backend product that helps everyday people work on three pi
 
 ## Layout
 
-- Working directory: `D:\test 2\Life Companion`
+- Working directory: `D:\Repo\Life_Companion`
 - Python venv: `venv\` (create with `python -m venv venv` then `venv\Scripts\pip install -r requirements.txt`)
 - Backend source: `src/`
   - `src/api/` — FastAPI routes
@@ -54,9 +54,32 @@ A daily-use mobile + backend product that helps everyday people work on three pi
   - `src/llm/` — multi-provider adapter (Gemini / Claude / OpenAI)
   - `src/auth/` — Firebase Auth verification middleware
 - Backend tests: `tests/`
-- Mobile app: `mobile/` (Flutter; `flutter create mobile --project-name life_companion` once Flutter SDK ready)
+- Mobile app: `mobile/` — **it exists**, contrary to the older "once Flutter SDK ready" note. It
+  carries `pubspec.yaml`, `analysis_options.yaml` and a real `lib/` tree: `main.dart`, `core/`
+  (config, router, api_client, auth_service, secure_storage, theme), `features/auth`,
+  `features/crisis/crisis_modal.dart`, `features/home`, and `shared/widgets/` including
+  `disclaimer_banner.dart`.
 - Plans + docs: `core/`
 - Memory pointer: index in `MEMORY.md` cross-project location
+
+**What is scaffolded vs what is implemented.** The pillar list above is the product intent; the
+`src/` tree is smaller than it. Verified 2026-08-17:
+
+| Module | Reality |
+|---|---|
+| `src/api/` | real: `reflection`, `patterns`, `health_pillar`, `crisis`, `billing`, `health` |
+| `src/crisis/` | real: `detector.py`, `hotlines.py` — the most complete module, as intended |
+| `src/llm/` | real: `adapter`, `registry`, `gemini`, `claude_adapter`, `openai_adapter` |
+| `src/auth/` | real: `firebase.py`, `deps.py` |
+| `src/db/` | real: `models.py`, `session.py`, alembic `migrations/` (no versions yet) |
+| `src/billing/` | `tiers.py` only — no Stripe or YooKassa adapter exists |
+| `src/health/` | `safety_filter.py` only — no doc interpreter, triage, meds or chronic log |
+| `src/reflection/` | `__init__.py` only — the Socratic engine is not written |
+| `src/patterns/` | `__init__.py` only — the history analyzer is not written |
+
+Two other things a directory listing will mislead you about: `restart.ps1` **exists** at the repo
+root (the note calling it "to be written in Phase 1" is stale), and `backend/` is an **empty,
+untracked leftover** — the backend lives at `src/`, not under `backend/`.
 
 ## Stack
 
@@ -107,3 +130,46 @@ A daily-use mobile + backend product that helps everyday people work on three pi
 - User segment: all three (overwhelmed / stuck / self-improving) — onboarding picks primary mode and tailors prompts.
 - Medical advisor: hire part-time GP starting month 2 ($500-800/mo) to review prompts + crisis rules.
 - Diagnosis policy: NEVER says "you have X" — always "I notice X, here are questions for your doctor."
+
+## History — one weekend of Phase 1, then three months of quiet
+
+Seven commits. The product is early, and the honest summary is that **Phase 1 landed, was reviewed
+hard, and nothing has been built since.**
+
+**2026-05-13 — bootstrap and Phase 1 (`7a5dab5`, `5dfdce1`).** The foundation in one commit:
+FastAPI, database layer, Firebase auth, the multi-provider LLM adapter, and the crisis scaffold.
+Crisis was in the first commit deliberately — the guardrail above says crisis detection ships before
+the first user, and the repository was built in that order rather than promising to retrofit it.
+
+**2026-05-14 — four reviewers, and what they found (`28a4482`).** `python-reviewer`,
+`security-reviewer`, `database-reviewer` and `flutter-reviewer` ran in parallel against the Phase 1
+commit. CRITICAL and HIGH findings were fixed in that commit; **MEDIUM and LOW were not silently
+dropped** — they are itemised in `core/PHASE_1_REVIEW_BACKLOG.md` with file and line, to be closed
+before Phase 2 builds on top. Read that file before extending any of these surfaces, because the
+open items are load-bearing for a product handling mental-health and medical data:
+
+- `SEC-M1` — `User.email` is stored as plain `String(320)`. Either encrypt it or record the
+  conscious tradeoff; GDPR Article 9 is in scope for this product.
+- `SEC-M2` — `CrisisEvent.user_id` is a joinable foreign key. The recorded direction is row-level
+  security or a separate schema with a restricted role.
+- `SEC-M4` — **no rate limiting exists** on the FastAPI app. To be added before Phase 2 wiring.
+- `SEC-M3` — test fixtures use `"test-key"` for LLM credentials; the plan is a sentinel that
+  refuses real use under `APP_ENV=test`.
+- `PY-M1` — `_firebase_initialized` is a bare global with no lock, unsafe under multi-worker ASGI.
+- `PY-M2` — the crisis-API fallback flag uses a `len > 3` heuristic instead of an explicit
+  membership check. A heuristic in the crisis path is exactly the wrong place for one.
+- `DB-M3` — `alembic.ini` has an empty `sqlalchemy.url`; CI needs to check `.env.test` exists
+  before running migrations.
+
+**2026-05-17 (`c7881b9`)** is a backup commit taken before the `test 2` → `test_2` rename, and
+**2026-07-28** adds three documentation commits: `AGENTS.md`, an agent-cadence section, and the
+on-demand `/rosetta` enablement (`2b83e6e`). None of them touch product code.
+
+**Since 2026-07-28 — nothing.** No Phase 2. `core/PLAN_2026_05_11_MVP.md` still describes a
+seven-phase, roughly 7–8 week MVP that has not resumed. Treat any claim that a pillar is
+"implemented" against the table above, not against the plan.
+
+**Uncommitted working tree (2026-08-17).** `CLAUDE.md`, `AGENTS.md`, `.env.example`,
+`core/GUARDRAILS.md`, `core/PLAN_2026_05_11_MVP.md`, `docker-compose.dev.yml`, `src/config.py` and
+`.claude/settings.json` all carry uncommitted edits — largely the 2026-08-14 `D:\test 2` → `D:\Repo`
+path migration. That is residue, not in-flight feature work.
