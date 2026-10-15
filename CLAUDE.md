@@ -173,3 +173,5 @@ seven-phase, roughly 7–8 week MVP that has not resumed. Treat any claim that a
 `core/GUARDRAILS.md`, `core/PLAN_2026_05_11_MVP.md`, `docker-compose.dev.yml`, `src/config.py` and
 `.claude/settings.json` all carry uncommitted edits — largely the 2026-08-14 `D:\test 2` → `D:\Repo`
 path migration. That is residue, not in-flight feature work.
+
+SDLC: use skill `sdlc-orchestrator` (state `docs/sdlc/STATE.md`).
